@@ -388,6 +388,39 @@ class CliTests(unittest.TestCase):
         body = json.loads(opener.requests[1].data.decode("utf-8"))
         self.assertEqual(body["task_payload"], task_payload)
 
+    def test_create_custom_session_requires_direct_task_payload_before_session_call(self):
+        opener = FakeOpener(
+            [
+                FakeResponse(body={"ok": True, "mode": "local_agent", "key_purpose": "external_agent"}),
+                FakeResponse(body={"session_id": "session_1"}),
+            ]
+        )
+        stderr = io.StringIO()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._save_config(tmp)
+            code = cli.main(
+                [
+                    "create-session",
+                    "--home",
+                    tmp,
+                    "--idea",
+                    "liquidity stress",
+                    "--client-run-id",
+                    "run_123",
+                ],
+                env={},
+                stdin=io.StringIO(),
+                stdout=io.StringIO(),
+                stderr=stderr,
+                opener=opener,
+            )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(len(opener.requests), 1)
+        self.assertIn("task_payload", stderr.getvalue())
+        self.assertIn("--task-payload-file", stderr.getvalue())
+
     def test_create_session_rejects_invalid_direct_task_payload_before_session_call(self):
         opener = FakeOpener(
             [
@@ -856,7 +889,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("Backtest timed out", stderr.getvalue())
-        self.assertIn("factor_api.py resume --client-run-id run_timeout", stderr.getvalue())
+        self.assertIn("factor_api.py resume --client-run-id run_timeout --wait", stderr.getvalue())
 
     def test_resume_wait_polls_until_terminal_and_writes_artifact(self):
         opener = FakeOpener(

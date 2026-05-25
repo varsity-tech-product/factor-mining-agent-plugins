@@ -253,7 +253,7 @@ def _run_wait_flow(
             }
             raise RuntimeError(
                 "Backtest timed out before completion. "
-                f"Resume command: python3 scripts/factor_api.py resume --client-run-id {state.client_run_id}. "
+                f"Resume command: python3 scripts/factor_api.py resume --client-run-id {state.client_run_id} --wait. "
                 f"Latest state: {json.dumps(latest, separators=(',', ':'), sort_keys=True)}"
             )
         if poll_interval > 0:
@@ -410,10 +410,16 @@ def run(args: argparse.Namespace, *, env: Mapping[str, str], stdin: TextIO, stdo
         return 0
 
     if args.command == "create-session":
+        task_payload = _load_task_payload(args)
+        if args.idea and task_payload is None:
+            raise ValueError(
+                "Custom sessions require direct task_payload. "
+                "Provide --task-payload-file or --task-payload-json before upload."
+            )
         response = client.create_session(
             idea=args.idea,
             task_id=args.task_id,
-            task_payload=_load_task_payload(args),
+            task_payload=task_payload,
             client_run_id=args.client_run_id,
         )
         if args.client_run_id:
