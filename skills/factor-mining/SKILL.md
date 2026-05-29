@@ -14,8 +14,10 @@ Use `quandora_connect` when no plugin-local credential is connected. Raw
 credentials must never be pasted into chat, terminal logs, UI text, or docs.
 Current public `main` is temporarily configured for localhost Local Agent
 Connect testing, so `quandora_connect` opens
-`http://127.0.0.1:3037/local-agent/connect`. Production releases should switch
-this default back to `https://app.quandora.ai/local-agent/connect`.
+`http://127.0.0.1:3037/local-agent/connect` and Factor Mining API calls use
+`http://127.0.0.1:18080`. Production releases should switch these defaults
+back to `https://app.quandora.ai/local-agent/connect` and
+`https://d25q1jf66e8y4g.cloudfront.net`.
 
 Buddy is optional. It provides desktop fishing animation and a sanitized local
 event receiver, but it is not required for authorization or backtesting. Plugin

@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 
 DEFAULT_HOME = Path.home() / ".factor-mining-agent"
-DEFAULT_BASE_URL = "https://d25q1jf66e8y4g.cloudfront.net"
+DEFAULT_BASE_URL = "http://127.0.0.1:18080"
 HOME_ENV = "FACTOR_MINING_AGENT_HOME"
 
 

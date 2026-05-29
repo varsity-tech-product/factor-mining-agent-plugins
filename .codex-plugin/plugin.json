@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Quandora Factor Mining",
     "shortDescription": "Turn public tasks or custom factor ideas into backtested plugin.py factors.",
-    "longDescription": "Quandora Factor Mining lets Codex write local plugin.py factors, validate metadata, upload to Quandora, run user-scoped backtests, retrieve factor cards, and summarize results through bundled MCP tools. The plugin owns Local Agent Connect authorization. Current public main is configured for localhost Local Agent Connect testing. Buddy is optional for desktop fishing animation, and plugin installation never downloads or installs Buddy in the background.",
+    "longDescription": "Quandora Factor Mining lets Codex write local plugin.py factors, validate metadata, upload to Quandora, run user-scoped backtests, retrieve factor cards, and summarize results through bundled MCP tools. The plugin owns Local Agent Connect authorization. Current public main is configured for localhost Local Agent Connect and local orchestrator testing. Buddy is optional for desktop fishing animation, and plugin installation never downloads or installs Buddy in the background.",
     "developerName": "Varsity Tech Product",
     "category": "Productivity",
     "capabilities": [

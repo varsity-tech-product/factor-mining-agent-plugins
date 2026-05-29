@@ -12,17 +12,24 @@ locally, and uses it through the bundled Quandora MCP tools. Users do not need
 to paste full credential values into chat.
 
 Current public `main` is temporarily configured for localhost Local Agent
-Connect testing. Start the local connect web service before starting Codex so
-`quandora_connect` can open:
+Connect testing. Start the local connect web service and local orchestrator
+before starting Codex so `quandora_connect` can open:
 
 ```text
 http://127.0.0.1:3037/local-agent/connect
 ```
 
-Production releases will switch this default back to:
+and the plugin can validate and run Factor Mining calls through:
+
+```text
+http://127.0.0.1:18080
+```
+
+Production releases will switch these defaults back to:
 
 ```text
 https://app.quandora.ai/local-agent/connect
+https://d25q1jf66e8y4g.cloudfront.net
 ```
 
 Quandora Buddy is optional. It provides desktop fishing animation and sanitized
@@ -103,7 +110,8 @@ Expected behavior:
 - Browser redirects to the plugin loopback callback.
 - Codex calls `quandora_connect_wait` if needed.
 - Plugin stores a `vt_agent_...` credential locally.
-- Codex calls `/agent/status` and then lists public tasks.
+- Codex calls local `/agent/status` on `http://127.0.0.1:18080` and then
+  lists public tasks.
 
 ## Product Workflow
 
