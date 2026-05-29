@@ -25,6 +25,7 @@ BUDDY_EVENT_TYPES = {
     "factor.writing",
     "factor.validating",
     "factor.casting",
+    "factor.submitted",
     "factor.waiting",
     "factor.result",
     "factor.failed",
@@ -198,9 +199,9 @@ def run_buddy_doctor(
 
 def buddy_install_guidance() -> dict[str, str]:
     return {
-        "message": "Quandora Buddy is a separate required local desktop app for account connection and backtesting.",
+        "message": "Quandora Buddy is an optional desktop animation companion.",
         "download_url": BUDDY_DOWNLOAD_URL,
-        "connect_guidance": BUDDY_CONNECT_GUIDANCE,
+        "connect_guidance": "Install Buddy only when you want desktop fishing animation or local event display.",
     }
 
 

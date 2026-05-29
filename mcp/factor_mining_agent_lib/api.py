@@ -48,9 +48,8 @@ class AgentStatusError(ApiError):
 
 
 AGENT_KEY_GUIDANCE = (
-    "Quandora Buddy is a separate required local desktop app for Factor Mining "
-    "account connection and backtesting. Install Buddy from "
-    "https://app.quandora.ai/download/buddy, start it, and connect Quandora through Buddy."
+    "Run quandora_connect to authorize this plugin with Quandora Local Agent Connect. "
+    "Buddy is optional and only provides the desktop fishing animation companion."
 )
 
 

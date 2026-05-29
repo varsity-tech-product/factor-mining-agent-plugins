@@ -1,29 +1,24 @@
 # Quandora Factor Mining
 
-Quandora Factor Mining is a Codex local-agent plugin for turning public factor
-tasks or custom factor ideas into local `plugin.py` factors, then submitting
-them to Quandora for validation, upload, backtesting, artifact retrieval, and
-result summaries.
+Quandora Factor Mining is a Codex plugin for turning public factor tasks or
+custom factor ideas into local `plugin.py` factors, then submitting them to
+Quandora for validation, upload, backtesting, artifact retrieval, and result
+summaries.
 
-Codex uses the bundled Quandora MCP tools for formal Factor Mining actions.
-The plugin does not expose generic API-call tools and does not ask users to
-copy or paste full Factor Mining credential values.
+The plugin owns local-agent authorization through Quandora Local Agent Connect.
+Codex opens the Quandora authorization page, receives the local callback,
+exchanges it for a delegated local-agent credential, stores that credential
+locally, and uses it through the bundled Quandora MCP tools. Users do not need
+to paste full credential values into chat.
 
-## Buddy Requirement
-
-Quandora Buddy is a separate required local desktop app for account connection
-and backtesting. Plugin installation does not silently install, start, update,
-bundle, or include Buddy.
-
-Install, start, and connect Buddy explicitly through the official Quandora path:
+Quandora Buddy is optional. It provides desktop fishing animation and sanitized
+local event display, but it is not required for plugin authorization or
+backtesting. Plugin installation never downloads, installs, starts, or updates
+Buddy in the background.
 
 ```text
 https://app.quandora.ai/download/buddy
 ```
-
-If Buddy is missing, stopped, disconnected, or unable to provide the delegated
-local-agent credential, Codex must stop authenticated Factor Mining work and
-guide you to install, start, and connect Buddy.
 
 ## Codex CLI Install
 
@@ -39,15 +34,6 @@ Or run the installer:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/varsity-tech-product/factor-mining-agent-plugins/main/install-codex.sh | bash
 ```
-
-The installer checks Buddy readiness with:
-
-```bash
-quandora-buddy doctor --json --min-version 0.1.0
-```
-
-Codex starts only after Buddy is ready. If Buddy is unavailable, the installer
-prints Buddy setup guidance and skips Codex startup.
 
 ## Codex Desktop Install
 
@@ -73,25 +59,50 @@ Use Factor Mining with my custom factor idea.
 Resume my Factor Mining run and summarize results.
 ```
 
+If no local-agent credential is connected, Codex will use `quandora_connect`
+to open Quandora Local Agent Connect. Complete authorization in the browser,
+then let Codex continue the workflow.
+
+## Product Workflow
+
+Codex uses the bundled `quandora-factor-mining` MCP server for formal Factor
+Mining actions:
+
+- connect, pending-connect wait/cancel/status, and disconnect
+- public task listing and task-backed session creation
+- custom idea session creation with explicit task payload
+- static `plugin.py` metadata parsing without executing generated code
+- deduplication context requests
+- upload, backtest, workflow/job polling, artifact retrieval, and summaries
+- optional sanitized Buddy events
+
+The plugin does not expose generic API-call, URL-fetch, or raw-credential
+tools. Generated `plugin.py` source stays local until the user asks Codex to
+submit it through the bundled Factor Mining workflow.
+
 ## Security And Privacy
 
-- Buddy is the local credential provider for authenticated Factor Mining work.
-- No formal user path requires copying or pasting a full `vt_` key.
-- The plugin should never print or persist full credential values.
-- The bundled MCP server does not expose raw credentials, generic URL fetches,
-  or generic API-call tools.
-- Generated `plugin.py` source stays local until the user asks Codex to submit
-  it through the bundled Factor Mining workflow.
+- Use only plugin-owned Local Agent Connect credentials through the bundled
+  Quandora MCP tools.
+- Never paste full Factor Mining credentials into chat.
+- Never print, persist in logs, or summarize full credential values.
+- Do not import, exec, eval, or otherwise execute generated `plugin.py`.
+- Do not print generated `plugin.py` source in final summaries.
+- Treat downstream job IDs, presigned URLs, and service metadata as internal.
+- Buddy events are best-effort and must never include credentials, generated
+  source, full workspace paths, presigned URLs, or backend internals.
 
 ## Troubleshooting
 
-If Codex says Buddy is unavailable:
+If Codex says the Quandora MCP tools are unavailable, upgrade and reinstall the
+plugin, then fully restart Codex:
 
-1. Install Quandora Buddy from the official download path.
-2. Start Buddy.
-3. Connect Quandora through Buddy.
-4. Ask Codex to run Quandora status again.
+```bash
+codex plugin marketplace upgrade factor-mining-marketplace
+codex plugin remove factor-mining@factor-mining-marketplace
+codex plugin add factor-mining@factor-mining-marketplace
+```
 
-If Buddy is installed but not ready, open Buddy and check its status. Codex will
-not continue with upload, backtest, polling, session creation, or artifact
-fetching until Buddy is connected and ready.
+If authorization is not connected, ask Codex to run Quandora connect again. If
+the browser cannot be opened automatically, Codex will show a safe
+authorization URL and wait for the connect callback in the same session.

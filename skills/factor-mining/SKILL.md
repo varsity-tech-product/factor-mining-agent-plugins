@@ -9,20 +9,20 @@ Use this skill for Factor Mining work in the Quandora local-agent product.
 Codex writes or locates one local `plugin.py`. Quandora validates, stores,
 backtests, and returns workflow, job, artifact, and factor result data.
 
-Buddy is a separate required local desktop app for account connection and
-backtesting. The plugin does not install, start, update, bundle, or include
-Buddy. Plugin installation never downloads or installs Buddy in the background.
-Buddy is required for account connection and backtesting.
-If Buddy is missing, stopped, disconnected, rejected, or unable to provide the
-delegated external-agent credential, stop before authenticated work and guide
-the user to install, start, and connect Buddy through the official Quandora
-path:
+The plugin owns local-agent authorization through Quandora Local Agent Connect.
+Use `quandora_connect` when no plugin-local credential is connected. Raw
+credentials must never be pasted into chat, terminal logs, UI text, or docs.
+
+Buddy is optional. It provides desktop fishing animation and a sanitized local
+event receiver, but it is not required for authorization or backtesting. Plugin
+installation never downloads or installs Buddy in the background. Optional
+Buddy download:
 
 ```text
 https://app.quandora.ai/download/buddy
 ```
 
-Use the bundled Quandora MCP tools for formal product actions. If the MCP tools
+Use the bundled Quandora MCP tools for the product workflow. If the MCP tools
 are not available, stop and explain that the Quandora plugin tools are not
 loaded. Do not fall back to raw HTTP calls or manual credential entry.
 
@@ -31,6 +31,12 @@ loaded. Do not fall back to raw HTTP calls or manual credential entry.
 Use these tools for the formal workflow:
 
 - `quandora_status`
+- `quandora_connect`
+- `quandora_connect_pending`
+- `quandora_connect_cancel`
+- `quandora_connect_wait`
+- `quandora_connect_status`
+- `quandora_disconnect`
 - `quandora_list_public_tasks`
 - `quandora_create_task_session`
 - `quandora_create_custom_session`
@@ -40,9 +46,21 @@ Use these tools for the formal workflow:
 - `quandora_resume_run`
 - `quandora_emit_buddy_event`
 
-Start with `quandora_status`. Continue only when Buddy is ready and the
-delegated credential validates. If status fails, report the Buddy guidance and
-do not call upload, backtest, polling, artifact, or session tools.
+Start with `quandora_connect_status` or `quandora_status`. Continue only when
+the plugin-local delegated credential validates. If no credential is connected,
+run `quandora_connect` and wait for the user to complete web authorization. Do
+not call upload, backtest, polling, artifact, or session tools before connect
+is complete.
+
+If `quandora_connect` returns `pending=true`, open the returned
+`authorization_url` for the user if possible, then call `quandora_connect_wait`
+with the returned `connect_handle`. The authorization URL is intended for
+browser navigation, but do not display PKCE verifiers, bearer headers, raw
+credentials, or any value outside the returned URL. The pending PKCE verifier
+and loopback callback server live only in the current MCP process; call
+`quandora_connect_wait` in the same agent session. Use
+`quandora_connect_pending` to inspect safe pending records and
+`quandora_connect_cancel` if the connect session is no longer needed.
 
 Determine whether the user is starting from a public task or a custom idea. For
 a public task flow, use `quandora_list_public_tasks`, show concise choices, and
@@ -70,9 +88,9 @@ user specifies a horizon.
 
 Summarize the JSON returned by `quandora_upload_backtest_wait` or
 `quandora_resume_run`. Always inspect `ok`, `status`, `terminal_status`,
-`failures`, terminal jobs, artifact availability, and factor-card metrics. If
-`ok` is false or failures are present, report the failed or cancelled terminal
-job clearly instead of presenting the run as successful.
+`failures`, sanitized job statuses, artifact availability, and factor-card
+metrics. If `ok` is false or failures are present, report the failed or
+cancelled terminal status clearly instead of presenting the run as successful.
 
 Buddy event emission is best-effort. Before upload or backtest submission, do
 not emit deterministic business-progress states for brainstorming, drafting,
@@ -80,6 +98,8 @@ editing, or plugin-defined progress. After upload or submission, Buddy events
 may reflect only backend-visible workflow, job, artifact, result, and
 fish-grade data. Never include credentials, generated source, full workspace
 paths, presigned URLs, or backend internals in event payloads.
+Never show backend job IDs, presigned URLs, local absolute paths, raw
+credentials, bearer tokens, or `plugin.py` source in user-facing summaries.
 
 ## plugin.py Contract
 

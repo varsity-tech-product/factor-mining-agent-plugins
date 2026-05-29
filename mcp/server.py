@@ -14,12 +14,12 @@ MCP_ROOT = Path(__file__).resolve().parent
 if str(MCP_ROOT) not in sys.path:
     sys.path.insert(0, str(MCP_ROOT))
 
+from factor_mining_agent_lib import connect
 from factor_mining_agent_lib.api import ApiClient, ApiError
 from factor_mining_agent_lib.buddy import (
     BUDDY_DOWNLOAD_URL,
     emit_buddy_event,
     failure_payload,
-    get_buddy_credential,
     result_payload_from_wait_result,
     validate_buddy_event_type,
 )
@@ -32,13 +32,11 @@ from factor_mining_agent_lib.workflow import is_workflow_terminal, summarize_fac
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "quandora-factor-mining"
-SERVER_VERSION = "0.2.3"
-BUDDY_REQUIRED_MESSAGE = (
-    "Quandora Buddy is a separate required local desktop app for Factor Mining "
-    "account connection and backtesting. Install Buddy from "
-    f"{BUDDY_DOWNLOAD_URL}, start it, and connect Quandora through Buddy. "
-    "The Quandora Factor Mining plugin does not install, update, start, bundle, "
-    "or include Buddy."
+SERVER_VERSION = "0.3.0"
+MISSING_CREDENTIAL_MESSAGE = (
+    "No Quandora local-agent credential is connected. Run quandora_connect to authorize this plugin through "
+    "Quandora Local Agent Connect. Buddy is optional and only provides the desktop fishing animation companion. "
+    f"You can download Buddy separately from {BUDDY_DOWNLOAD_URL}."
 )
 TASK_PAYLOAD_REQUIRED_FIELDS = {
     "task_id",
@@ -54,7 +52,7 @@ class McpServerError(RuntimeError):
     pass
 
 
-class BuddyRequiredError(McpServerError):
+class MissingCredentialError(McpServerError):
     pass
 
 
@@ -64,8 +62,71 @@ class ToolInputError(McpServerError):
 
 TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
-        "name": "quandora_status",
-        "description": "Check Quandora Buddy readiness and validate the delegated external-agent credential.",
+        "name": "quandora_connect",
+        "description": "Authorize this local Factor Mining plugin through Quandora Local Agent Connect.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "web_connect_url": {"type": "string"},
+                "credential_backend_base_url": {"type": "string"},
+                "orchestrator_base_url": {"type": "string"},
+                "label": {"type": "string"},
+                "replace_existing": {"type": "boolean"},
+                "timeout_seconds": {"type": "number", "minimum": 1},
+                "open_browser": {"type": "boolean"},
+                "home": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "quandora_connect_wait",
+        "description": "Wait for a pending Quandora Local Agent Connect authorization to finish and store the delegated credential.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "connect_handle": {"type": "string"},
+                "timeout_seconds": {"type": "number", "minimum": 1},
+                "home": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "quandora_connect_pending",
+        "description": "List pending Quandora Local Agent Connect authorizations that can be completed or cancelled in this agent session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "quandora_connect_cancel",
+        "description": "Cancel a pending Quandora Local Agent Connect authorization and close its loopback callback server.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "connect_handle": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "quandora_connect_status",
+        "description": "Report plugin-local Local Agent Connect status and optional Buddy animation companion availability.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "live_check": {"type": "boolean"},
+                "home": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "quandora_disconnect",
+        "description": "Revoke and remove the plugin-local Local Agent Connect credential.",
         "inputSchema": {
             "type": "object",
             "properties": {"home": {"type": "string"}},
@@ -73,8 +134,17 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "name": "quandora_status",
+        "description": "Validate the plugin-local delegated external-agent credential.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"home": {"type": "string"}, "live_check": {"type": "boolean"}},
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "quandora_list_public_tasks",
-        "description": "List open public Factor Mining tasks through Buddy-provided authentication.",
+        "description": "List open public Factor Mining tasks through plugin-local Local Agent Connect authentication.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -208,6 +278,18 @@ def list_tool_names() -> list[str]:
 
 def call_tool(name: str, arguments: Mapping[str, Any] | None = None, *, opener: Any = None, env: Mapping[str, str] | None = None) -> Any:
     args = dict(arguments or {})
+    if name == "quandora_connect":
+        return _connect(args, opener=opener, env=env)
+    if name == "quandora_connect_wait":
+        return _connect_wait(args, opener=opener, env=env)
+    if name == "quandora_connect_pending":
+        return _connect_pending()
+    if name == "quandora_connect_cancel":
+        return _connect_cancel(args)
+    if name == "quandora_connect_status":
+        return _connect_status(args, opener=opener, env=env)
+    if name == "quandora_disconnect":
+        return _disconnect(args, opener=opener, env=env)
     if name == "quandora_status":
         return _status(args, opener=opener, env=env)
     if name == "quandora_list_public_tasks":
@@ -230,17 +312,88 @@ def call_tool(name: str, arguments: Mapping[str, Any] | None = None, *, opener: 
 
 
 def _status(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> dict[str, Any]:
-    _credential, client = _client_from_buddy(args, opener=opener, env=env, verify_live=False)
-    status = client.agent_status()
-    return {
+    status_args = dict(args)
+    status_args["live_check"] = args.get("live_check", True)
+    return _connect_status(status_args, opener=opener, env=env)
+
+
+def _connect(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> dict[str, Any]:
+    active_env = env if env is not None else os.environ
+    result = connect.connect_local_agent(
+        web_connect_url=str(args.get("web_connect_url") or active_env.get("QUANDORA_CONNECT_WEB_URL") or connect.DEFAULT_WEB_CONNECT_URL),
+        credential_backend_base_url=_optional_string(args, "credential_backend_base_url")
+        or active_env.get("QUANDORA_CREDENTIAL_BACKEND_BASE_URL"),
+        orchestrator_base_url=str(
+            args.get("orchestrator_base_url")
+            or active_env.get("QUANDORA_ORCHESTRATOR_BASE_URL")
+            or connect.DEFAULT_BASE_URL
+        ),
+        label=_optional_string(args, "label"),
+        replace_existing=bool(args.get("replace_existing", True)),
+        timeout_seconds=float(args.get("timeout_seconds") or connect.DEFAULT_TIMEOUT_SECONDS),
+        open_browser=bool(args.get("open_browser", True)),
+        home=_configured_home(args, env),
+        opener=opener,
+        client={"name": "quandora-factor-mining-plugin", "adapter": "codex", "version": SERVER_VERSION},
+    )
+    return _redact_payload(result)
+
+
+def _connect_wait(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> dict[str, Any]:
+    result = connect.wait_for_pending_connect(
+        connect_handle=_optional_string(args, "connect_handle"),
+        timeout_seconds=float(args.get("timeout_seconds") or connect.DEFAULT_TIMEOUT_SECONDS),
+        home=_configured_home(args, env),
+        opener=opener,
+    )
+    return _redact_payload(result)
+
+
+def _connect_pending() -> dict[str, Any]:
+    return _redact_payload({"ok": True, "pending": connect.pending_connect_status()})
+
+
+def _connect_cancel(args: Mapping[str, Any]) -> dict[str, Any]:
+    return _redact_payload(connect.cancel_pending_connect_request(_optional_string(args, "connect_handle")))
+
+
+def _connect_status(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> dict[str, Any]:
+    home = _configured_home(args, env)
+    buddy = _buddy_runtime_status(home)
+    try:
+        record = connect.load_connected_credential(home)
+    except Exception as exc:
+        return {
+            "ok": True,
+            "connected": False,
+            "credential": None,
+            "buddy": buddy,
+            "message": str(exc),
+        }
+
+    safe_record = connect.safe_credential_record(record)
+    result: dict[str, Any] = {
         "ok": True,
-        "buddy": {"ready": True, "credential_provider": "connected"},
-        "agent_status": _redact_payload(status),
+        "connected": True,
+        "redacted": safe_record["credential"]["redacted"],
+        "capabilities": safe_record.get("capabilities", []),
+        "identity": safe_record.get("identity", {}),
+        "base_url": safe_record.get("base_url"),
+        "connected_at": safe_record.get("connected_at"),
+        "buddy": buddy,
     }
+    if bool(args.get("live_check", False)):
+        client = ApiClient(str(record["base_url"]), str(record["credential"]["value"]), opener=opener)
+        result["agent_status"] = _redact_payload(client.agent_status())
+    return result
+
+
+def _disconnect(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> dict[str, Any]:
+    return _redact_payload(connect.disconnect_local_agent(home=_configured_home(args, env), opener=opener))
 
 
 def _list_public_tasks(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> Any:
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     limit = int(args.get("limit") or 20)
     status = args.get("status") if args.get("status") is not None else "open"
     return _redact_payload(client.list_tasks(limit=limit, status=str(status) if status else None))
@@ -249,7 +402,7 @@ def _list_public_tasks(args: Mapping[str, Any], *, opener: Any, env: Mapping[str
 def _create_task_session(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> Any:
     task_id = _required_string(args, "task_id")
     client_run_id = _optional_string(args, "client_run_id")
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     response = client.create_session(task_id=task_id, client_run_id=client_run_id)
     if client_run_id:
         save_run_state(
@@ -266,7 +419,7 @@ def _create_custom_session(args: Mapping[str, Any], *, opener: Any, env: Mapping
         raise ToolInputError("task_payload must be a JSON object")
     _validate_task_payload(task_payload)
     client_run_id = _optional_string(args, "client_run_id")
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     response = client.create_session(
         idea=idea,
         task_payload=task_payload,
@@ -285,7 +438,7 @@ def _parse_plugin_metadata(args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _request_dedup_context(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> Any:
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     return _redact_payload(
         client.dedup_context(
             session_id=_required_string(args, "session_id"),
@@ -297,7 +450,7 @@ def _request_dedup_context(args: Mapping[str, Any], *, opener: Any, env: Mapping
 
 
 def _upload_backtest_wait(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> Any:
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     home = _configured_home(args, env)
     session_id = _required_string(args, "session_id")
     plugin_path = Path(_required_string(args, "plugin_path"))
@@ -330,7 +483,7 @@ def _upload_backtest_wait(args: Mapping[str, Any], *, opener: Any, env: Mapping[
             raise McpServerError("Upload response did not include plugin_id")
         emit_buddy_event(
             "factor.casting",
-            {"plugin_id": plugin_id},
+            {"stage": "plugin_uploaded"},
             run={"client_run_id": client_run_id, "session_id": session_id},
             workspace=plugin_path.parent,
             home=home,
@@ -351,6 +504,13 @@ def _upload_backtest_wait(args: Mapping[str, Any], *, opener: Any, env: Mapping[
             artifact_paths={},
         )
         save_run_state(state, home=home)
+        emit_buddy_event(
+            "factor.submitted",
+            {"status": "submitted"},
+            run={"client_run_id": client_run_id, "session_id": session_id},
+            workspace=plugin_path.parent,
+            home=home,
+        )
         emit_buddy_event(
             "factor.waiting",
             {"submitted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
@@ -390,7 +550,7 @@ def _upload_backtest_wait(args: Mapping[str, Any], *, opener: Any, env: Mapping[
 
 
 def _resume_run(args: Mapping[str, Any], *, opener: Any, env: Mapping[str, str] | None) -> Any:
-    _credential, client = _client_from_buddy(args, opener=opener, env=env)
+    _credential, client = _client_from_local_auth(args, opener=opener, env=env)
     home = _configured_home(args, env)
     state = load_run_state(_required_string(args, "client_run_id"), home=home)
     artifact_name = _optional_string(args, "artifact_name") or "default_factor_card.json"
@@ -460,20 +620,35 @@ def _emit_buddy_event(args: Mapping[str, Any], *, env: Mapping[str, str] | None)
     )
 
 
-def _client_from_buddy(
+def _client_from_local_auth(
     args: Mapping[str, Any],
     *,
     opener: Any,
     env: Mapping[str, str] | None,
     verify_live: bool = True,
-) -> tuple[dict[str, str], ApiClient]:
-    credential = get_buddy_credential(home=_configured_home(args, env))
-    if credential is None:
-        raise BuddyRequiredError(BUDDY_REQUIRED_MESSAGE)
-    client = ApiClient(credential["base_url"], credential["api_key"], opener=opener)
+) -> tuple[dict[str, Any], ApiClient]:
+    try:
+        credential = connect.load_connected_credential(home=_configured_home(args, env))
+    except Exception as exc:
+        raise MissingCredentialError(MISSING_CREDENTIAL_MESSAGE) from exc
+    client = ApiClient(str(credential["base_url"]), str(credential["credential"]["value"]), opener=opener)
     if verify_live:
         client.agent_status()
     return credential, client
+
+
+def _buddy_runtime_status(home: str | None) -> dict[str, Any]:
+    root = Path(home).expanduser() if home is not None else Path.home()
+    port_file = root / ".quandora-buddy" / "port.json"
+    try:
+        payload = json.loads(port_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {"available": False, "role": "optional_animation_companion"}
+    return {
+        "available": isinstance(payload, Mapping) and isinstance(payload.get("port"), int),
+        "role": "optional_animation_companion",
+        "credential_provider": "compatibility_only",
+    }
 
 
 def _configured_home(args: Mapping[str, Any], env: Mapping[str, str] | None) -> str | None:
